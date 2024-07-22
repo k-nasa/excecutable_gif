@@ -46,15 +46,19 @@ type ExtensionBlock =
 type CommentExtension = {
   comment_blocks: number[];
 
+  block_name: "Comment";
   pos: Position;
 };
 type GraphicControlExtension = {
+  block_name: "GraphicControl";
   pos: Position;
 };
 type PlainTextExtension = {
+  block_name: "PlainText";
   pos: Position;
 };
 type ApplicationExtension = {
+  block_name: "Application";
   pos: Position;
   block_size: number;
   app_identifier: string;
@@ -64,6 +68,7 @@ type ApplicationExtension = {
 };
 
 type ImageBlock = {
+  block_name: "Image";
   pos: Position;
   left: number;
   top: number;
@@ -131,11 +136,20 @@ export class GifDecoder {
 }
 
 export const main = async () => {
-  const gif_byte = await Deno.readFile("nasa.gif");
+  const filename = Deno.args[0];
+  const gif_byte = await Deno.readFile(filename);
 
   const gif = decode(gif_byte);
 
   console.log(gif);
+
+  // show positions
+  console.log(`Header: ${gif.header.pos.start} - ${gif.header.pos.end}`);
+  gif.blocks?.forEach((block) => {
+    console.log(
+      `${block?.block_name} Block: ${block?.pos.start} - ${block?.pos.end}`
+    );
+  });
 };
 
 type Color = {
@@ -250,7 +264,7 @@ const decodeExtension = (decoder: GifDecoder): ExtensionBlock => {
   switch (extension_type) {
     case GIF_GRAPHIC_CONTROL_EXTENSION:
       console.warn("Found graphic control extension. Skipping block");
-      return { pos: skipBlock(decoder) };
+      return { block_name: "GraphicControl", pos: skipBlock(decoder) };
     case GIF_COMMENT_EXTENSION:
       return decodeComment(decoder);
     case GIF_PLAIN_TEXT_EXTENSION:
@@ -267,7 +281,8 @@ const decodeApplicationExtension = (
 ): ApplicationExtension => {
   console.info("Found application extension. Skipping block");
 
-  const start_pos = decoder.pos;
+  // FIXME: -2している理由は、block_typeとextension_typeの2バイト分をすでに読み込んでいるため
+  const start_pos = decoder.pos - 2;
 
   const block_size = decoder.readByte();
   const app_identifier = decoder.readString(8);
@@ -290,7 +305,7 @@ const decodeApplicationExtension = (
   if (application_data_size === 0) {
     // application_data_sizeはterminatorの場合もある
     // 0の場合はterminatorがあるので、そのまま終了
-    return res;
+    return { ...res, block_name: "Application" };
   }
 
   console.log(`Application data size: ${application_data_size}`);
@@ -305,6 +320,7 @@ const decodeApplicationExtension = (
 
   return {
     ...res,
+    block_name: "Application",
     application_data,
     pos: {
       start: start_pos,
@@ -315,7 +331,8 @@ const decodeApplicationExtension = (
 
 // ブロックの終わりまで読み飛ばす
 const skipBlock = (decoder: GifDecoder): Position => {
-  const start_pos = decoder.pos;
+  // FIXME: -2している理由は、block_typeとextension_typeの2バイト分をすでに読み込んでいるため
+  const start_pos = decoder.pos - 2;
   const block_size = decoder.readByte();
 
   console.info(`Skipping block size: ${block_size}`);
@@ -334,7 +351,8 @@ const skipBlock = (decoder: GifDecoder): Position => {
 const decodeImage = (decoder: GifDecoder): ImageBlock => {
   console.info("Found image block");
 
-  const start_pos = decoder.pos;
+  // FIXME: -2している理由は、block_typeをすでに読み込んでいるため
+  const start_pos = decoder.pos - 1;
 
   const left = decoder.readInt16Le();
   const top = decoder.readInt16Le();
@@ -374,6 +392,7 @@ const decodeImage = (decoder: GifDecoder): ImageBlock => {
     const block_size = decoder.readByte();
     if (block_size === 0) {
       return {
+        block_name: "Image",
         width,
         height,
         left,
@@ -403,13 +422,15 @@ const decodeImage = (decoder: GifDecoder): ImageBlock => {
 const decodeComment = (decoder: GifDecoder): CommentExtension => {
   console.info("Found comment extension");
 
-  const start_pos = decoder.pos;
+  // FIXME: -2している理由は、block_typeとextension_typeの2バイト分をすでに読み込んでいるため
+  const start_pos = decoder.pos - 2;
   const comment_blocks = [];
 
   while (true) {
     const block_size = decoder.readByte();
     if (block_size === 0) {
       return {
+        block_name: "Comment",
         comment_blocks: comment_blocks.flat(),
         pos: {
           start: start_pos,
