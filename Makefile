@@ -4,7 +4,7 @@ test:
 
 .PHONY: decode
 decode:
-	deno run --allow-read main.ts
+	deno run --allow-read main.ts nasa.gif
 
 .PHONY: run
 run:
